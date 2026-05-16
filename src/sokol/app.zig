@@ -2395,6 +2395,14 @@ pub fn html5FetchDroppedFile(request: Html5FetchRequest) void {
     sapp_html5_fetch_dropped_file(&request);
 }
 
+/// Metal: get bridged pointer to the CAMetalDrawable cached in the most recent sapp_get_swapchain() call (this frame), null otherwise
+extern fn sapp_metal_get_current_drawable() ?*const anyopaque;
+
+/// Metal: get bridged pointer to the CAMetalDrawable cached in the most recent sapp_get_swapchain() call (this frame), null otherwise
+pub fn metalGetCurrentDrawable() ?*const anyopaque {
+    return sapp_metal_get_current_drawable();
+}
+
 /// macOS: get bridged pointer to macOS NSWindow
 extern fn sapp_macos_get_window() ?*const anyopaque;
 

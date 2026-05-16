@@ -2226,6 +2226,9 @@ SOKOL_APP_API_DECL uint32_t sapp_html5_get_dropped_file_size(int index);
 /* HTML5: asynchronously load the content of a dropped file */
 SOKOL_APP_API_DECL void sapp_html5_fetch_dropped_file(const sapp_html5_fetch_request* request);
 
+/* Metal: get bridged pointer to the CAMetalDrawable cached in the most recent sapp_get_swapchain() call (this frame), null otherwise */
+SOKOL_APP_API_DECL const void* sapp_metal_get_current_drawable(void);
+
 /* macOS: get bridged pointer to macOS NSWindow */
 SOKOL_APP_API_DECL const void* sapp_macos_get_window(void);
 /* iOS: get bridged pointer to iOS UIWindow */
@@ -2799,6 +2802,10 @@ typedef struct {
         NSTimer* fallback_timer;
         id<MTLTexture> depth_tex;
         id<MTLTexture> msaa_tex;
+        // cached drawable acquired in _sapp_macos_mtl_swapchain_next() for the current frame,
+        // exposed via sapp_metal_get_current_drawable() so post-render code (e.g. IOSurface
+        // readback) can address the already-rendered drawable instead of acquiring a new one.
+        id<CAMetalDrawable> cur_drawable;
         // NOTE: CADisplayLink.timestamp seems to be very stable, so we'll use
         // this instead of the generic measured+filtered frame timing code
         struct {
@@ -2852,6 +2859,10 @@ typedef struct {
         CADisplayLink* display_link;
         id<MTLTexture> depth_tex;
         id<MTLTexture> msaa_tex;
+        // cached drawable acquired in _sapp_ios_mtl_swapchain_next() for the current frame,
+        // exposed via sapp_metal_get_current_drawable() so post-render code can address
+        // the already-rendered drawable instead of acquiring a new one.
+        id<CAMetalDrawable> cur_drawable;
         struct {
             CFTimeInterval timestamp;
             CFTimeInterval frame_duration_sec;
@@ -5095,6 +5106,9 @@ _SOKOL_PRIVATE void _sapp_macos_mtl_swapchain_resize(int width, int height) {
 _SOKOL_PRIVATE id<CAMetalDrawable> _sapp_macos_mtl_swapchain_next(void) {
     id<CAMetalDrawable> drawable = [_sapp.macos.mtl.layer nextDrawable];
     SOKOL_ASSERT(drawable != nil);
+    // Cache the drawable for sapp_metal_get_current_drawable(). The drawable is
+    // owned by Metal's autorelease pool tied to the frame, so we don't retain here.
+    _sapp.macos.mtl.cur_drawable = drawable;
     return drawable;
 }
 
@@ -6407,6 +6421,8 @@ _SOKOL_PRIVATE void _sapp_ios_mtl_swapchain_resize(int width, int height) {
 _SOKOL_PRIVATE id<CAMetalDrawable> _sapp_ios_mtl_swapchain_next(void) {
     id<CAMetalDrawable> drawable = [_sapp.ios.mtl.layer nextDrawable];
     SOKOL_ASSERT(drawable != nil);
+    // Cache the drawable for sapp_metal_get_current_drawable(). See macOS variant.
+    _sapp.ios.mtl.cur_drawable = drawable;
     return drawable;
 }
 
@@ -14394,6 +14410,21 @@ SOKOL_API_IMPL sapp_swapchain sapp_get_swapchain(void) {
     res.depth_format = sapp_depth_format();
     res.sample_count = sapp_sample_count();
     return res;
+}
+
+SOKOL_API_IMPL const void* sapp_metal_get_current_drawable(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_METAL)
+        #if defined(_SAPP_MACOS)
+            return (__bridge const void*) _sapp.macos.mtl.cur_drawable;
+        #elif defined(_SAPP_IOS)
+            return (__bridge const void*) _sapp.ios.mtl.cur_drawable;
+        #else
+            return 0;
+        #endif
+    #else
+        return 0;
+    #endif
 }
 
 SOKOL_API_IMPL const void* sapp_macos_get_window(void) {
