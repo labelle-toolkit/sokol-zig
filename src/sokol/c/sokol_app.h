@@ -5116,6 +5116,10 @@ _SOKOL_PRIVATE void _sapp_macos_mtl_swapchain_create(int width, int height) {
 }
 
 _SOKOL_PRIVATE void _sapp_macos_mtl_swapchain_destroy(void) {
+    // drop strong reference to the cached CAMetalDrawable so the swapchain pool
+    // isn't starved when this is called on resize (also paired with the nil reset
+    // in _sapp_macos_mtl_swapchain_next() to prevent cross-frame retention)
+    _sapp.macos.mtl.cur_drawable = nil;
     if (_sapp.macos.mtl.depth_tex) {
         _SAPP_OBJC_RELEASE(_sapp.macos.mtl.depth_tex);
     }
@@ -5130,6 +5134,11 @@ _SOKOL_PRIVATE void _sapp_macos_mtl_swapchain_resize(int width, int height) {
 }
 
 _SOKOL_PRIVATE id<CAMetalDrawable> _sapp_macos_mtl_swapchain_next(void) {
+    // release the previous frame's drawable BEFORE acquiring a new one;
+    // under ARC, cur_drawable is a __strong reference and holding it across
+    // frames would starve CAMetalLayer's small drawable pool (causing
+    // nextDrawable to block or return nil and trip the assert below).
+    _sapp.macos.mtl.cur_drawable = nil;
     id<CAMetalDrawable> drawable = [_sapp.macos.mtl.layer nextDrawable];
     SOKOL_ASSERT(drawable != nil);
     // cache for sapp_metal_get_current_drawable(); ARC will retain via __strong assignment
@@ -6431,6 +6440,10 @@ _SOKOL_PRIVATE void _sapp_ios_mtl_swapchain_create(int width, int height) {
 }
 
 _SOKOL_PRIVATE void _sapp_ios_mtl_swapchain_destroy(void) {
+    // drop strong reference to the cached CAMetalDrawable so the swapchain pool
+    // isn't starved when this is called on resize (also paired with the nil reset
+    // in _sapp_ios_mtl_swapchain_next() to prevent cross-frame retention)
+    _sapp.ios.mtl.cur_drawable = nil;
     if (_sapp.ios.mtl.depth_tex) {
         _SAPP_OBJC_RELEASE(_sapp.ios.mtl.depth_tex);
     }
@@ -6445,6 +6458,11 @@ _SOKOL_PRIVATE void _sapp_ios_mtl_swapchain_resize(int width, int height) {
 }
 
 _SOKOL_PRIVATE id<CAMetalDrawable> _sapp_ios_mtl_swapchain_next(void) {
+    // release the previous frame's drawable BEFORE acquiring a new one;
+    // under ARC, cur_drawable is a __strong reference and holding it across
+    // frames would starve CAMetalLayer's small drawable pool (causing
+    // nextDrawable to block or return nil and trip the assert below).
+    _sapp.ios.mtl.cur_drawable = nil;
     id<CAMetalDrawable> drawable = [_sapp.ios.mtl.layer nextDrawable];
     SOKOL_ASSERT(drawable != nil);
     // cache for sapp_metal_get_current_drawable(); ARC will retain via __strong assignment
