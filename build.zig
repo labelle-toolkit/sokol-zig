@@ -71,6 +71,7 @@ pub fn build(b: *Build) !void {
     const opt_use_wayland = b.option(bool, "wayland", "Force Wayland (default: false, Linux only, not supported in main-line headers)") orelse false;
     const opt_use_egl = b.option(bool, "egl", "Force EGL (default: false, Linux only)") orelse false;
     const opt_with_sokol_imgui = b.option(bool, "with_sokol_imgui", "Add support for sokol_imgui.h bindings") orelse false;
+    const opt_with_sokol_imgui_no_app = b.option(bool, "with_sokol_imgui_no_app", "Define SOKOL_IMGUI_NO_SOKOL_APP when compiling sokol_imgui.h (headless mode)") orelse false;
     const opt_with_tracing = b.option(bool, "with_tracing", "Add support for sokol_gfx tracing and debug UI") orelse false;
     const opt_dont_link_system_libs = b.option(bool, "dont_link_system_libs", "Do not link system libraries required by sokol (default: false)") orelse false;
     const opt_sokol_imgui_cprefix = b.option([]const u8, "sokol_imgui_cprefix", "Override Dear ImGui C bindings prefix for sokol_imgui.h (see SOKOL_IMGUI_CPREFIX)");
@@ -93,6 +94,7 @@ pub fn build(b: *Build) !void {
         .use_x11 = opt_use_x11,
         .use_egl = opt_use_egl,
         .with_sokol_imgui = opt_with_sokol_imgui or opt_with_tracing,
+        .with_sokol_imgui_no_app = opt_with_sokol_imgui_no_app,
         .with_tracing = opt_with_tracing,
         .sokol_imgui_cprefix = opt_sokol_imgui_cprefix,
         .cimgui_header_path = opt_cimgui_header_path,
@@ -139,6 +141,7 @@ pub const LibSokolOptions = struct {
     use_wayland: bool = false,
     emsdk: ?*Build.Dependency = null,
     with_sokol_imgui: bool = false,
+    with_sokol_imgui_no_app: bool = false,
     with_tracing: bool = false,
     sokol_imgui_cprefix: ?[]const u8 = null,
     cimgui_header_path: ?[]const u8 = null,
@@ -313,6 +316,9 @@ pub fn buildLibSokol(b: *Build, options: LibSokolOptions) !*Build.Step.Compile {
     // optional Dear ImGui support, the called is required to also
     // add the cimgui include path to the returned compile step
     if (options.with_sokol_imgui) {
+        if (options.with_sokol_imgui_no_app) {
+            try cflags.appendBounded("-DSOKOL_IMGUI_NO_SOKOL_APP");
+        }
         if (options.sokol_imgui_cprefix) |cprefix| {
             try cflags.appendBounded(b.fmt("-DSOKOL_IMGUI_CPREFIX={s}", .{cprefix}));
         }
