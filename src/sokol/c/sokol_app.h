@@ -2231,12 +2231,42 @@ SOKOL_APP_API_DECL const void* sapp_macos_get_window(void);
 /* iOS: get bridged pointer to iOS UIWindow */
 SOKOL_APP_API_DECL const void* sapp_ios_get_window(void);
 
+/* Metal: get pointer to MTLDevice object */
+SOKOL_APP_API_DECL const void* sapp_metal_get_device(void);
+/* Metal: get current frame's CAMetalDrawable */
+SOKOL_APP_API_DECL const void* sapp_metal_get_current_drawable(void);
+/* Metal: get current frame's depth-stencil MTLTexture */
+SOKOL_APP_API_DECL const void* sapp_metal_get_depth_stencil_texture(void);
+/* Metal: get current frame's MSAA-color MTLTexture (null if sample_count<=1) */
+SOKOL_APP_API_DECL const void* sapp_metal_get_msaa_color_texture(void);
+
+/* D3D11: get pointer to ID3D11Device object */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_device(void);
+/* D3D11: get pointer to ID3D11DeviceContext object */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_device_context(void);
+/* D3D11: get pointer to current frame's ID3D11RenderTargetView (msaa rtv if sample_count>1, otherwise rtv) */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_render_view(void);
+/* D3D11: get pointer to current frame's resolve ID3D11RenderTargetView (null if sample_count<=1) */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_resolve_view(void);
+/* D3D11: get pointer to ID3D11DepthStencilView object */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_depth_stencil_view(void);
 /* D3D11: get pointer to IDXGISwapChain object */
 SOKOL_APP_API_DECL const void* sapp_d3d11_get_swap_chain(void);
+
+/* WGPU: get pointer to WGPUDevice object */
+SOKOL_APP_API_DECL const void* sapp_wgpu_get_device(void);
+/* WGPU: get current frame's WGPUTextureView render target (msaa view if sample_count>1, otherwise swapchain view) */
+SOKOL_APP_API_DECL const void* sapp_wgpu_get_render_view(void);
+/* WGPU: get current frame's WGPUTextureView resolve target (null if sample_count<=1) */
+SOKOL_APP_API_DECL const void* sapp_wgpu_get_resolve_view(void);
+/* WGPU: get current frame's depth-stencil WGPUTextureView */
+SOKOL_APP_API_DECL const void* sapp_wgpu_get_depth_stencil_view(void);
 
 /* Win32: get the HWND window handle */
 SOKOL_APP_API_DECL const void* sapp_win32_get_hwnd(void);
 
+/* GL: get the default framebuffer object (typically 0) */
+SOKOL_APP_API_DECL uint32_t sapp_gl_get_framebuffer(void);
 /* GL: get major version */
 SOKOL_APP_API_DECL int sapp_gl_get_major_version(void);
 /* GL: get minor version */
@@ -2799,6 +2829,11 @@ typedef struct {
         NSTimer* fallback_timer;
         id<MTLTexture> depth_tex;
         id<MTLTexture> msaa_tex;
+        // NOTE: cur_drawable caches the most recently acquired CAMetalDrawable
+        // so that sapp_metal_get_current_drawable() can return it without
+        // re-invoking [layer nextDrawable] (which would acquire a new drawable
+        // and corrupt the in-flight render). Reset to nil at start of frame.
+        id<CAMetalDrawable> cur_drawable;
         // NOTE: CADisplayLink.timestamp seems to be very stable, so we'll use
         // this instead of the generic measured+filtered frame timing code
         struct {
@@ -2852,6 +2887,8 @@ typedef struct {
         CADisplayLink* display_link;
         id<MTLTexture> depth_tex;
         id<MTLTexture> msaa_tex;
+        // see _sapp_macos_t.mtl.cur_drawable comment
+        id<CAMetalDrawable> cur_drawable;
         struct {
             CFTimeInterval timestamp;
             CFTimeInterval frame_duration_sec;
@@ -5095,6 +5132,8 @@ _SOKOL_PRIVATE void _sapp_macos_mtl_swapchain_resize(int width, int height) {
 _SOKOL_PRIVATE id<CAMetalDrawable> _sapp_macos_mtl_swapchain_next(void) {
     id<CAMetalDrawable> drawable = [_sapp.macos.mtl.layer nextDrawable];
     SOKOL_ASSERT(drawable != nil);
+    // cache for sapp_metal_get_current_drawable(); ARC will retain via __strong assignment
+    _sapp.macos.mtl.cur_drawable = drawable;
     return drawable;
 }
 
@@ -5209,6 +5248,7 @@ _SOKOL_PRIVATE void _sapp_macos_mtl_discard_state(void) {
     _sapp_macos_mtl_stop_display_link();
     _sapp_macos_mtl_stop_fallback_timer();
     _sapp_macos_mtl_swapchain_destroy();
+    _sapp.macos.mtl.cur_drawable = nil;
     _SAPP_OBJC_RELEASE(_sapp.macos.mtl.layer);
     _SAPP_OBJC_RELEASE(_sapp.macos.mtl.device);
 }
@@ -6407,6 +6447,8 @@ _SOKOL_PRIVATE void _sapp_ios_mtl_swapchain_resize(int width, int height) {
 _SOKOL_PRIVATE id<CAMetalDrawable> _sapp_ios_mtl_swapchain_next(void) {
     id<CAMetalDrawable> drawable = [_sapp.ios.mtl.layer nextDrawable];
     SOKOL_ASSERT(drawable != nil);
+    // cache for sapp_metal_get_current_drawable(); ARC will retain via __strong assignment
+    _sapp.ios.mtl.cur_drawable = drawable;
     return drawable;
 }
 
@@ -6480,6 +6522,7 @@ _SOKOL_PRIVATE void _sapp_ios_mtl_init(UIWindowScene* windowScene) {
 _SOKOL_PRIVATE void _sapp_ios_mtl_discard_state(void) {
     _sapp_ios_mtl_stop_display_link();
     _sapp_ios_mtl_swapchain_destroy();
+    _sapp.ios.mtl.cur_drawable = nil;
     _SAPP_OBJC_RELEASE(_sapp.ios.mtl.layer);
     _SAPP_OBJC_RELEASE(_sapp.ios.view_ctrl);
     _SAPP_OBJC_RELEASE(_sapp.ios.mtl.device);
@@ -14425,10 +14468,176 @@ SOKOL_API_IMPL const void* sapp_d3d11_get_swap_chain(void) {
 #endif
 }
 
+SOKOL_API_IMPL const void* sapp_metal_get_device(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_METAL)
+        #if defined(_SAPP_MACOS)
+            return (__bridge const void*) _sapp.macos.mtl.device;
+        #elif defined(_SAPP_IOS)
+            return (__bridge const void*) _sapp.ios.mtl.device;
+        #else
+            return 0;
+        #endif
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_metal_get_current_drawable(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_METAL)
+        #if defined(_SAPP_MACOS)
+            return (__bridge const void*) _sapp.macos.mtl.cur_drawable;
+        #elif defined(_SAPP_IOS)
+            return (__bridge const void*) _sapp.ios.mtl.cur_drawable;
+        #else
+            return 0;
+        #endif
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_metal_get_depth_stencil_texture(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_METAL)
+        #if defined(_SAPP_MACOS)
+            return (__bridge const void*) _sapp.macos.mtl.depth_tex;
+        #elif defined(_SAPP_IOS)
+            return (__bridge const void*) _sapp.ios.mtl.depth_tex;
+        #else
+            return 0;
+        #endif
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_metal_get_msaa_color_texture(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_METAL)
+        #if defined(_SAPP_MACOS)
+            return (__bridge const void*) _sapp.macos.mtl.msaa_tex;
+        #elif defined(_SAPP_IOS)
+            return (__bridge const void*) _sapp.ios.mtl.msaa_tex;
+        #else
+            return 0;
+        #endif
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_device(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        return (const void*) _sapp.d3d11.device;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_device_context(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        return (const void*) _sapp.d3d11.device_context;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_render_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        if (_sapp.sample_count > 1) {
+            return (const void*) _sapp.d3d11.msaa_rtv;
+        } else {
+            return (const void*) _sapp.d3d11.rtv;
+        }
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_resolve_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        if (_sapp.sample_count > 1) {
+            return (const void*) _sapp.d3d11.rtv;
+        } else {
+            return 0;
+        }
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_depth_stencil_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        return (const void*) _sapp.d3d11.dsv;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_wgpu_get_device(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_WGPU)
+        return (const void*) _sapp.wgpu.device;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_wgpu_get_render_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_WGPU)
+        if (_sapp.sample_count > 1) {
+            return (const void*) _sapp.wgpu.msaa_view;
+        } else {
+            return (const void*) _sapp.wgpu.swapchain_view;
+        }
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_wgpu_get_resolve_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_WGPU)
+        if (_sapp.sample_count > 1) {
+            return (const void*) _sapp.wgpu.swapchain_view;
+        } else {
+            return 0;
+        }
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_wgpu_get_depth_stencil_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_WGPU)
+        return (const void*) _sapp.wgpu.depth_stencil_view;
+    #else
+        return 0;
+    #endif
+}
+
 SOKOL_API_IMPL const void* sapp_win32_get_hwnd(void) {
     SOKOL_ASSERT(_sapp.valid);
     #if defined(_SAPP_WIN32)
         return _sapp.win32.hwnd;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL uint32_t sapp_gl_get_framebuffer(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(_SAPP_ANY_GL)
+        return _sapp.gl.framebuffer;
     #else
         return 0;
     #endif
