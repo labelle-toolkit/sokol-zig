@@ -2231,12 +2231,42 @@ SOKOL_APP_API_DECL const void* sapp_macos_get_window(void);
 /* iOS: get bridged pointer to iOS UIWindow */
 SOKOL_APP_API_DECL const void* sapp_ios_get_window(void);
 
+/* Metal: get pointer to MTLDevice object */
+SOKOL_APP_API_DECL const void* sapp_metal_get_device(void);
+/* Metal: get current frame's CAMetalDrawable */
+SOKOL_APP_API_DECL const void* sapp_metal_get_current_drawable(void);
+/* Metal: get current frame's depth-stencil MTLTexture */
+SOKOL_APP_API_DECL const void* sapp_metal_get_depth_stencil_texture(void);
+/* Metal: get current frame's MSAA-color MTLTexture (null if sample_count<=1) */
+SOKOL_APP_API_DECL const void* sapp_metal_get_msaa_color_texture(void);
+
+/* D3D11: get pointer to ID3D11Device object */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_device(void);
+/* D3D11: get pointer to ID3D11DeviceContext object */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_device_context(void);
+/* D3D11: get pointer to current frame's ID3D11RenderTargetView (msaa rtv if sample_count>1, otherwise rtv) */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_render_view(void);
+/* D3D11: get pointer to current frame's resolve ID3D11RenderTargetView (null if sample_count<=1) */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_resolve_view(void);
+/* D3D11: get pointer to ID3D11DepthStencilView object */
+SOKOL_APP_API_DECL const void* sapp_d3d11_get_depth_stencil_view(void);
 /* D3D11: get pointer to IDXGISwapChain object */
 SOKOL_APP_API_DECL const void* sapp_d3d11_get_swap_chain(void);
+
+/* WGPU: get pointer to WGPUDevice object */
+SOKOL_APP_API_DECL const void* sapp_wgpu_get_device(void);
+/* WGPU: get current frame's WGPUTextureView render target (msaa view if sample_count>1, otherwise swapchain view) */
+SOKOL_APP_API_DECL const void* sapp_wgpu_get_render_view(void);
+/* WGPU: get current frame's WGPUTextureView resolve target (null if sample_count<=1) */
+SOKOL_APP_API_DECL const void* sapp_wgpu_get_resolve_view(void);
+/* WGPU: get current frame's depth-stencil WGPUTextureView */
+SOKOL_APP_API_DECL const void* sapp_wgpu_get_depth_stencil_view(void);
 
 /* Win32: get the HWND window handle */
 SOKOL_APP_API_DECL const void* sapp_win32_get_hwnd(void);
 
+/* GL: get the default framebuffer object (typically 0) */
+SOKOL_APP_API_DECL uint32_t sapp_gl_get_framebuffer(void);
 /* GL: get major version */
 SOKOL_APP_API_DECL int sapp_gl_get_major_version(void);
 /* GL: get minor version */
@@ -2251,6 +2281,65 @@ SOKOL_APP_API_DECL const void* sapp_x11_get_display(void);
 
 /* Android: get native activity handle */
 SOKOL_APP_API_DECL const void* sapp_android_get_native_activity(void);
+
+/*
+    Android gamepad event forwarding (labelle-toolkit fork; labelle-assembler#250).
+
+    Upstream sokol_app.h drops controller input on Android: gamepad
+    AKEYCODE_BUTTON_* / AKEYCODE_DPAD_* key events and AINPUT_SOURCE_JOYSTICK
+    motion events never produce a sapp_event (sapp_event has no gamepad
+    variants). This fork forwards the *raw* Android gamepad data to a
+    registered callback instead of dropping it, so an embedder can maintain
+    gamepad button/axis state. When no callback is registered there is NO
+    behavior change — gamepad keys still fall through to the existing handler
+    (e.g. BACK still drives the app-quit path). This is gated to the Android
+    backend (SOKOL_ANDROID); on every other platform the API is a no-op stub.
+
+    The callback runs on sokol's Android input/Looper thread, synchronously
+    while draining the AInputQueue. Keep it cheap (copy into a ring / set
+    flags); do NOT call back into sapp from it.
+
+    AKEYCODE_BACK is deliberately NOT forwarded: controller B aliases to BACK
+    on many Android setups, and routing the app-quit policy stays with the
+    embedder's existing back-key handling (see labelle-assembler#248).
+*/
+typedef enum sapp_android_gamepad_event_type {
+    SAPP_ANDROID_GAMEPAD_EVENT_INVALID = 0,
+    SAPP_ANDROID_GAMEPAD_EVENT_KEY,     /* button up/down (key_code + key_down) */
+    SAPP_ANDROID_GAMEPAD_EVENT_MOTION,  /* analog axes snapshot (axis[]) */
+} sapp_android_gamepad_event_type;
+
+/* Axis slots forwarded for a MOTION event. Order is fixed ABI — the embedder
+   indexes by these. Mirrors the Android AMOTION_EVENT_AXIS_* constants we read. */
+enum {
+    SAPP_ANDROID_GAMEPAD_AXIS_X = 0,        /* left stick X  (AXIS_X) */
+    SAPP_ANDROID_GAMEPAD_AXIS_Y = 1,        /* left stick Y  (AXIS_Y) */
+    SAPP_ANDROID_GAMEPAD_AXIS_Z = 2,        /* right stick X on many pads (AXIS_Z) */
+    SAPP_ANDROID_GAMEPAD_AXIS_RZ = 3,       /* right stick Y on many pads (AXIS_RZ) */
+    SAPP_ANDROID_GAMEPAD_AXIS_RX = 4,       /* right stick X on some pads (AXIS_RX) */
+    SAPP_ANDROID_GAMEPAD_AXIS_RY = 5,       /* right stick Y on some pads (AXIS_RY) */
+    SAPP_ANDROID_GAMEPAD_AXIS_LTRIGGER = 6, /* left analog trigger (AXIS_LTRIGGER) */
+    SAPP_ANDROID_GAMEPAD_AXIS_RTRIGGER = 7, /* right analog trigger (AXIS_RTRIGGER) */
+    SAPP_ANDROID_GAMEPAD_AXIS_GAS = 8,      /* trigger alias (AXIS_GAS) */
+    SAPP_ANDROID_GAMEPAD_AXIS_BRAKE = 9,    /* trigger alias (AXIS_BRAKE) */
+    SAPP_ANDROID_GAMEPAD_AXIS_HAT_X = 10,   /* dpad as hat X (AXIS_HAT_X) */
+    SAPP_ANDROID_GAMEPAD_AXIS_HAT_Y = 11,   /* dpad as hat Y (AXIS_HAT_Y) */
+    SAPP_ANDROID_GAMEPAD_NUM_AXES = 12,
+};
+
+typedef struct sapp_android_gamepad_event {
+    sapp_android_gamepad_event_type type;
+    int32_t device_id;  /* AInputEvent_getDeviceId() — matches InputDevice ids */
+    /* KEY events: */
+    int32_t key_code;   /* AKEYCODE_BUTTON_* / AKEYCODE_DPAD_* */
+    bool key_down;      /* true = AKEY_EVENT_ACTION_DOWN */
+    /* MOTION events: per-axis snapshot, indexed by SAPP_ANDROID_GAMEPAD_AXIS_*. */
+    float axis[SAPP_ANDROID_GAMEPAD_NUM_AXES];
+} sapp_android_gamepad_event;
+
+/* Register (or clear, with NULL) the gamepad-event callback. No-op stub off
+   Android. Passing NULL restores the default (drop) behavior. */
+SOKOL_APP_API_DECL void sapp_android_register_gamepad_callback(void (*cb)(const sapp_android_gamepad_event* ev));
 
 #ifdef __cplusplus
 } /* extern "C" */
@@ -2517,6 +2606,8 @@ inline void sapp_run(const sapp_desc& desc) { return sapp_run(&desc); }
     #include <time.h>
     #include <android/native_activity.h>
     #include <android/looper.h>
+    #include <android/input.h>     /* AMotionEvent_getAxisValue, AMOTION_EVENT_AXIS_* (labelle#250) */
+    #include <android/keycodes.h>  /* AKEYCODE_BUTTON_*, AKEYCODE_DPAD_* (labelle#250) */
     #if __ANDROID_API__ >= 29
         #include <android/choreographer.h>
     #endif
@@ -2799,6 +2890,11 @@ typedef struct {
         NSTimer* fallback_timer;
         id<MTLTexture> depth_tex;
         id<MTLTexture> msaa_tex;
+        // NOTE: cur_drawable caches the most recently acquired CAMetalDrawable
+        // so that sapp_metal_get_current_drawable() can return it without
+        // re-invoking [layer nextDrawable] (which would acquire a new drawable
+        // and corrupt the in-flight render). Reset to nil at start of frame.
+        id<CAMetalDrawable> cur_drawable;
         // NOTE: CADisplayLink.timestamp seems to be very stable, so we'll use
         // this instead of the generic measured+filtered frame timing code
         struct {
@@ -2852,6 +2948,8 @@ typedef struct {
         CADisplayLink* display_link;
         id<MTLTexture> depth_tex;
         id<MTLTexture> msaa_tex;
+        // see _sapp_macos_t.mtl.cur_drawable comment
+        id<CAMetalDrawable> cur_drawable;
         struct {
             CFTimeInterval timestamp;
             CFTimeInterval frame_duration_sec;
@@ -5079,6 +5177,10 @@ _SOKOL_PRIVATE void _sapp_macos_mtl_swapchain_create(int width, int height) {
 }
 
 _SOKOL_PRIVATE void _sapp_macos_mtl_swapchain_destroy(void) {
+    // drop strong reference to the cached CAMetalDrawable so the swapchain pool
+    // isn't starved when this is called on resize (also paired with the nil reset
+    // in _sapp_macos_mtl_swapchain_next() to prevent cross-frame retention)
+    _sapp.macos.mtl.cur_drawable = nil;
     if (_sapp.macos.mtl.depth_tex) {
         _SAPP_OBJC_RELEASE(_sapp.macos.mtl.depth_tex);
     }
@@ -5093,8 +5195,15 @@ _SOKOL_PRIVATE void _sapp_macos_mtl_swapchain_resize(int width, int height) {
 }
 
 _SOKOL_PRIVATE id<CAMetalDrawable> _sapp_macos_mtl_swapchain_next(void) {
+    // release the previous frame's drawable BEFORE acquiring a new one;
+    // under ARC, cur_drawable is a __strong reference and holding it across
+    // frames would starve CAMetalLayer's small drawable pool (causing
+    // nextDrawable to block or return nil and trip the assert below).
+    _sapp.macos.mtl.cur_drawable = nil;
     id<CAMetalDrawable> drawable = [_sapp.macos.mtl.layer nextDrawable];
     SOKOL_ASSERT(drawable != nil);
+    // cache for sapp_metal_get_current_drawable(); ARC will retain via __strong assignment
+    _sapp.macos.mtl.cur_drawable = drawable;
     return drawable;
 }
 
@@ -5209,6 +5318,7 @@ _SOKOL_PRIVATE void _sapp_macos_mtl_discard_state(void) {
     _sapp_macos_mtl_stop_display_link();
     _sapp_macos_mtl_stop_fallback_timer();
     _sapp_macos_mtl_swapchain_destroy();
+    _sapp.macos.mtl.cur_drawable = nil;
     _SAPP_OBJC_RELEASE(_sapp.macos.mtl.layer);
     _SAPP_OBJC_RELEASE(_sapp.macos.mtl.device);
 }
@@ -6391,6 +6501,10 @@ _SOKOL_PRIVATE void _sapp_ios_mtl_swapchain_create(int width, int height) {
 }
 
 _SOKOL_PRIVATE void _sapp_ios_mtl_swapchain_destroy(void) {
+    // drop strong reference to the cached CAMetalDrawable so the swapchain pool
+    // isn't starved when this is called on resize (also paired with the nil reset
+    // in _sapp_ios_mtl_swapchain_next() to prevent cross-frame retention)
+    _sapp.ios.mtl.cur_drawable = nil;
     if (_sapp.ios.mtl.depth_tex) {
         _SAPP_OBJC_RELEASE(_sapp.ios.mtl.depth_tex);
     }
@@ -6405,8 +6519,15 @@ _SOKOL_PRIVATE void _sapp_ios_mtl_swapchain_resize(int width, int height) {
 }
 
 _SOKOL_PRIVATE id<CAMetalDrawable> _sapp_ios_mtl_swapchain_next(void) {
+    // release the previous frame's drawable BEFORE acquiring a new one;
+    // under ARC, cur_drawable is a __strong reference and holding it across
+    // frames would starve CAMetalLayer's small drawable pool (causing
+    // nextDrawable to block or return nil and trip the assert below).
+    _sapp.ios.mtl.cur_drawable = nil;
     id<CAMetalDrawable> drawable = [_sapp.ios.mtl.layer nextDrawable];
     SOKOL_ASSERT(drawable != nil);
+    // cache for sapp_metal_get_current_drawable(); ARC will retain via __strong assignment
+    _sapp.ios.mtl.cur_drawable = drawable;
     return drawable;
 }
 
@@ -6480,6 +6601,7 @@ _SOKOL_PRIVATE void _sapp_ios_mtl_init(UIWindowScene* windowScene) {
 _SOKOL_PRIVATE void _sapp_ios_mtl_discard_state(void) {
     _sapp_ios_mtl_stop_display_link();
     _sapp_ios_mtl_swapchain_destroy();
+    _sapp.ios.mtl.cur_drawable = nil;
     _SAPP_OBJC_RELEASE(_sapp.ios.mtl.layer);
     _SAPP_OBJC_RELEASE(_sapp.ios.view_ctrl);
     _SAPP_OBJC_RELEASE(_sapp.ios.mtl.device);
@@ -10451,6 +10573,96 @@ _SOKOL_PRIVATE void _sapp_android_frame(double external_now) {
     eglSwapBuffers(_sapp.android.display, _sapp.android.surface);
 }
 
+/* ── Gamepad event forwarding (labelle-toolkit fork; labelle-assembler#250) ──
+   When an embedder registers a callback we forward gamepad KEY events
+   (AKEYCODE_BUTTON_* / AKEYCODE_DPAD_*) and AINPUT_SOURCE_JOYSTICK MOTION
+   events to it instead of dropping them. With no callback registered, every
+   function here returns false and the original drop/back-key behavior is
+   preserved exactly. */
+static void (*_sapp_android_gamepad_cb)(const sapp_android_gamepad_event* ev) = 0;
+
+_SOKOL_PRIVATE bool _sapp_android_keycode_is_gamepad(int32_t kc) {
+    /* Contiguous BUTTON range (A..MODE = 96..110) covers A/B/X/Y, L1/R1,
+       L2/R2, THUMBL/THUMBR, START/SELECT, MODE, plus C/Z and BUTTON_1..16. */
+    if (kc >= AKEYCODE_BUTTON_A && kc <= AKEYCODE_BUTTON_MODE) {
+        return true;
+    }
+    switch (kc) {
+        case AKEYCODE_DPAD_UP:
+        case AKEYCODE_DPAD_DOWN:
+        case AKEYCODE_DPAD_LEFT:
+        case AKEYCODE_DPAD_RIGHT:
+        case AKEYCODE_DPAD_CENTER:
+            return true;
+        default:
+            return false;
+    }
+}
+
+/* Forward a gamepad KEY event. Returns true if it was a gamepad button and a
+   callback consumed it. AKEYCODE_BACK is intentionally excluded so the
+   existing back-key handler keeps owning the quit policy. */
+_SOKOL_PRIVATE bool _sapp_android_gamepad_key_event(const AInputEvent* e) {
+    if (!_sapp_android_gamepad_cb) {
+        return false;
+    }
+    if (AInputEvent_getType(e) != AINPUT_EVENT_TYPE_KEY) {
+        return false;
+    }
+    const int32_t kc = AKeyEvent_getKeyCode(e);
+    if (!_sapp_android_keycode_is_gamepad(kc)) {
+        return false;
+    }
+    const int32_t action = AKeyEvent_getAction(e);
+    if (action != AKEY_EVENT_ACTION_DOWN && action != AKEY_EVENT_ACTION_UP) {
+        return false; /* ignore MULTIPLE/repeat synthesis; down/up only */
+    }
+    sapp_android_gamepad_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = SAPP_ANDROID_GAMEPAD_EVENT_KEY;
+    ev.device_id = AInputEvent_getDeviceId(e);
+    ev.key_code = kc;
+    ev.key_down = (action == AKEY_EVENT_ACTION_DOWN);
+    _sapp_android_gamepad_cb(&ev);
+    return true;
+}
+
+/* Forward an AINPUT_SOURCE_JOYSTICK / GAMEPAD MOTION event as an axis
+   snapshot. Returns true if forwarded. */
+_SOKOL_PRIVATE bool _sapp_android_gamepad_motion_event(const AInputEvent* e) {
+    if (!_sapp_android_gamepad_cb) {
+        return false;
+    }
+    if (AInputEvent_getType(e) != AINPUT_EVENT_TYPE_MOTION) {
+        return false;
+    }
+    const int32_t source = AInputEvent_getSource(e);
+    const bool is_joystick = (source & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK;
+    const bool is_gamepad = (source & AINPUT_SOURCE_GAMEPAD) == AINPUT_SOURCE_GAMEPAD;
+    if (!is_joystick && !is_gamepad) {
+        return false; /* leave touch/mouse/etc. to _sapp_android_touch_event */
+    }
+    sapp_android_gamepad_event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = SAPP_ANDROID_GAMEPAD_EVENT_MOTION;
+    ev.device_id = AInputEvent_getDeviceId(e);
+    /* Most recent sample (pointer index 0). */
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_X]        = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_X, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_Y]        = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_Y, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_Z]        = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_Z, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_RZ]       = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_RZ, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_RX]       = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_RX, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_RY]       = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_RY, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_LTRIGGER] = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_LTRIGGER, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_RTRIGGER] = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_RTRIGGER, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_GAS]      = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_GAS, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_BRAKE]    = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_BRAKE, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_HAT_X]    = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_HAT_X, 0);
+    ev.axis[SAPP_ANDROID_GAMEPAD_AXIS_HAT_Y]    = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_HAT_Y, 0);
+    _sapp_android_gamepad_cb(&ev);
+    return true;
+}
+
 _SOKOL_PRIVATE bool _sapp_android_touch_event(const AInputEvent* e) {
     if (AInputEvent_getType(e) != AINPUT_EVENT_TYPE_MOTION) {
         return false;
@@ -10534,7 +10746,14 @@ _SOKOL_PRIVATE int _sapp_android_input_cb(int fd, int events, void* data) {
             continue;
         }
         int32_t handled = 0;
-        if (_sapp_android_touch_event(event) || _sapp_android_key_event(event)) {
+        /* Gamepad forwarding (labelle#250) runs first: a joystick MOTION event
+           must not reach _sapp_android_touch_event (which would treat it as a
+           touch MOVE). Both gamepad handlers are no-ops when no callback is
+           registered, preserving upstream behavior. */
+        if (_sapp_android_gamepad_key_event(event) ||
+            _sapp_android_gamepad_motion_event(event) ||
+            _sapp_android_touch_event(event) ||
+            _sapp_android_key_event(event)) {
             handled = 1;
         }
         AInputQueue_finishEvent(_sapp.android.current.input, event, handled);
@@ -14425,10 +14644,176 @@ SOKOL_API_IMPL const void* sapp_d3d11_get_swap_chain(void) {
 #endif
 }
 
+SOKOL_API_IMPL const void* sapp_metal_get_device(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_METAL)
+        #if defined(_SAPP_MACOS)
+            return (__bridge const void*) _sapp.macos.mtl.device;
+        #elif defined(_SAPP_IOS)
+            return (__bridge const void*) _sapp.ios.mtl.device;
+        #else
+            return 0;
+        #endif
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_metal_get_current_drawable(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_METAL)
+        #if defined(_SAPP_MACOS)
+            return (__bridge const void*) _sapp.macos.mtl.cur_drawable;
+        #elif defined(_SAPP_IOS)
+            return (__bridge const void*) _sapp.ios.mtl.cur_drawable;
+        #else
+            return 0;
+        #endif
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_metal_get_depth_stencil_texture(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_METAL)
+        #if defined(_SAPP_MACOS)
+            return (__bridge const void*) _sapp.macos.mtl.depth_tex;
+        #elif defined(_SAPP_IOS)
+            return (__bridge const void*) _sapp.ios.mtl.depth_tex;
+        #else
+            return 0;
+        #endif
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_metal_get_msaa_color_texture(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_METAL)
+        #if defined(_SAPP_MACOS)
+            return (__bridge const void*) _sapp.macos.mtl.msaa_tex;
+        #elif defined(_SAPP_IOS)
+            return (__bridge const void*) _sapp.ios.mtl.msaa_tex;
+        #else
+            return 0;
+        #endif
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_device(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        return (const void*) _sapp.d3d11.device;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_device_context(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        return (const void*) _sapp.d3d11.device_context;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_render_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        if (_sapp.sample_count > 1) {
+            return (const void*) _sapp.d3d11.msaa_rtv;
+        } else {
+            return (const void*) _sapp.d3d11.rtv;
+        }
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_resolve_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        if (_sapp.sample_count > 1) {
+            return (const void*) _sapp.d3d11.rtv;
+        } else {
+            return 0;
+        }
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_d3d11_get_depth_stencil_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_D3D11)
+        return (const void*) _sapp.d3d11.dsv;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_wgpu_get_device(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_WGPU)
+        return (const void*) _sapp.wgpu.device;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_wgpu_get_render_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_WGPU)
+        if (_sapp.sample_count > 1) {
+            return (const void*) _sapp.wgpu.msaa_view;
+        } else {
+            return (const void*) _sapp.wgpu.swapchain_view;
+        }
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_wgpu_get_resolve_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_WGPU)
+        if (_sapp.sample_count > 1) {
+            return (const void*) _sapp.wgpu.swapchain_view;
+        } else {
+            return 0;
+        }
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL const void* sapp_wgpu_get_depth_stencil_view(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(SOKOL_WGPU)
+        return (const void*) _sapp.wgpu.depth_stencil_view;
+    #else
+        return 0;
+    #endif
+}
+
 SOKOL_API_IMPL const void* sapp_win32_get_hwnd(void) {
     SOKOL_ASSERT(_sapp.valid);
     #if defined(_SAPP_WIN32)
         return _sapp.win32.hwnd;
+    #else
+        return 0;
+    #endif
+}
+
+SOKOL_API_IMPL uint32_t sapp_gl_get_framebuffer(void) {
+    SOKOL_ASSERT(_sapp.valid);
+    #if defined(_SAPP_ANY_GL)
+        return _sapp.gl.framebuffer;
     #else
         return 0;
     #endif
@@ -14483,6 +14868,16 @@ SOKOL_API_IMPL const void* sapp_android_get_native_activity(void) {
         return (void*)_sapp.android.activity;
     #else
         return 0;
+    #endif
+}
+
+SOKOL_API_IMPL void sapp_android_register_gamepad_callback(void (*cb)(const sapp_android_gamepad_event* ev)) {
+    /* labelle-toolkit fork (labelle-assembler#250). Off Android this is a
+       no-op stub: the embedder can call it unconditionally. */
+    #if defined(_SAPP_ANDROID)
+        _sapp_android_gamepad_cb = cb;
+    #else
+        (void)cb;
     #endif
 }
 
