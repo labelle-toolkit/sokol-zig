@@ -10177,7 +10177,9 @@ _SOKOL_PRIVATE void _sg_gl_init_caps_gles3(void) {
             } else if (strstr(ext, "_compressed_texture_etc")) {
                 has_etc2 = true;
             } else if (strstr(ext, "_compressed_texture_astc")) {
-                has_astc = true;
+                has_astc = true;  // WebGL spelling (WEBGL_compressed_texture_astc)
+            } else if (strstr(ext, "_texture_compression_astc")) {
+                has_astc = true;  // native GLES/KHR/OES spelling (GL_KHR_texture_compression_astc_ldr / GL_OES_texture_compression_astc)
             } else if (strstr(ext, "_color_buffer_float")) {
                 has_colorbuffer_float = true;
             } else if (strstr(ext, "_color_buffer_half_float")) {
